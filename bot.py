@@ -16,8 +16,7 @@ logging.basicConfig(level=logging.INFO)
 # Replace these strings with your actual credentials
 BOT_TOKEN = "8823641804:AAE-FH80pUdwK4"
 SIGHTENGINE_USER = "1721004361"
-SIGHTENGINE_SECRET = 
-"SuR4QHjJjf3CD4GwMKF9ZRsNotsAUvLh"
+SIGHTENGINE_SECRET = "SuR4QHjJjf3CD4GwMKF9ZRsNotsAUvLh"
 # --- DATABASE SETUP ---
 def init_db():
     conn = sqlite3.connect("group_bot.db")
