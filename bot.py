@@ -107,26 +107,37 @@ async def set_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def warn_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context): return
-    target = update.message.reply_to_message.from_user if update.message.reply_to_message else None
-    if not target: return
-
+    msg = update.message
     chat_id = update.effective_chat.id
-    db = get_db()
-    res = db.execute("SELECT count FROM warns WHERE chat_id=? AND user_id=?", (chat_id, target.id)).fetchone()
-    count = (res[0] + 1) if res else 1
+    target_id, target_name = None, None
 
-    if count >= 3:
-        db.execute("DELETE FROM warns WHERE chat_id=? AND user_id=?", (chat_id, target.id))
-        await context.bot.ban_chat_member(chat_id, target.id)
-        await update.message.reply_text(f"{target.mention_html()} reached 3 warnings and was banned.", parse_mode="HTML")
-        log_text = f"<b>🚫 BAN (3 WARNS)</b>\n<b>User:</b> {target.mention_html()}\n<b>Admin:</b> {update.effective_user.mention_html()}"
-    else:
-        db.execute("INSERT OR REPLACE INTO warns VALUES (?, ?, ?)", (chat_id, target.id, count))
-        await update.message.reply_text(f"Warned {target.mention_html()} ({count}/3).", parse_mode="HTML")
-        log_text = f"<b>⚠️ WARN ({count}/3)</b>\n<b>User:</b> {target.mention_html()}\n<b>Admin:</b> {update.effective_user.mention_html()}"
+    if msg.reply_to_message:
+        target = msg.reply_to_message.from_user
+        target_id, target_name = target.id, target.mention_html()
+        if msg.text.startswith("/dwarn"):
+            await msg.reply_to_message.delete()
+    elif context.args and context.args[0].isdigit():
+        target_id = int(context.args[0])
+        target_name = f"<a href='tg://user?id={target_id}'>{target_id}</a>"
 
-    db.commit()
-    await send_log(context, chat_id, log_text)
+    if target_id:
+        db = get_db()
+        res = db.execute("SELECT count FROM warns WHERE chat_id=? AND user_id=?", (chat_id, target_id)).fetchone()
+        count = (res[0] + 1) if res else 1
+
+        if count >= 3:
+            db.execute("DELETE FROM warns WHERE chat_id=? AND user_id=?", (chat_id, target_id))
+            await context.bot.ban_chat_member(chat_id, target_id)
+            await msg.reply_text(f"{target_name} reached 3 warnings and was banned.", parse_mode="HTML")
+            log_text = f"<b>🚫 BAN (3 WARNS)</b>\n<b>User:</b> {target_name}\n<b>Admin:</b> {update.effective_user.mention_html()}"
+        else:
+            db.execute("INSERT OR REPLACE INTO warns VALUES (?, ?, ?)", (chat_id, target_id, count))
+            await msg.reply_text(f"Warned {target_name} ({count}/3).", parse_mode="HTML")
+            log_text = f"<b>⚠️ WARN ({count}/3)</b>\n<b>User:</b> {target_name}\n<b>Admin:</b> {update.effective_user.mention_html()}"
+
+        db.commit()
+        await send_log(context, chat_id, log_text)
+        
 
 async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context): return
@@ -156,26 +167,40 @@ async def tmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     log_text = f"<b>⏳ TEMP MUTE</b>\n<b>User ID:</b> {target_id}\n<b>Duration:</b> {duration_str}\n<b>Admin:</b> {update.effective_user.mention_html()}"
     await send_log(context, chat_id, log_text)
-
-async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE, silent=False):
+    
+    async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context): return
-    target = update.message.reply_to_message.from_user if update.message.reply_to_message else None
-    reason = " ".join(context.args) if context.args else "No reason provided"
+    msg = update.message
     chat_id = update.effective_chat.id
+    target_id, target_name = None, None
+    reason = "No reason provided"
 
-    if target:
-        await context.bot.ban_chat_member(chat_id, target.id)
-        if silent:
-            await update.message.reply_to_message.delete()
+    if msg.reply_to_message:
+        target = msg.reply_to_message.from_user
+        target_id, target_name = target.id, target.mention_html()
+        if context.args: reason = " ".join(context.args)
+        if msg.text.startswith("/dban"):
+            await msg.reply_to_message.delete()
+    elif context.args:
+        arg = context.args[0]
+        reason = " ".join(context.args[1:]) if len(context.args) > 1 else reason
+        if arg.isdigit():
+            target_id = int(arg)
+            target_name = f"<a href='tg://user?id={target_id}'>{target_id}</a>"
         else:
-            await update.message.reply_text(f"Banned {target.first_name}. Reason: {reason}")
+            await msg.reply_text("Please reply to a user or pass their numerical User ID.")
+            return
 
+    if target_id:
+        await context.bot.ban_chat_member(chat_id, target_id)
         db = get_db()
-        db.execute("INSERT OR REPLACE INTO bans VALUES (?, ?, ?)", (chat_id, target.id, reason))
+        db.execute("INSERT OR REPLACE INTO bans VALUES (?, ?, ?)", (chat_id, target_id, reason))
         db.commit()
 
-        log_text = f"<b>🔨 USER BANNED</b>\n<b>User:</b> {target.mention_html()} ({target.id})\n<b>Admin:</b> {update.effective_user.mention_html()}\n<b>Reason:</b> {reason}"
+        await msg.reply_text(f"Banned {target_name}. Reason: {reason}", parse_mode="HTML")
+        log_text = f"<b>🔨 BAN</b>\n<b>User:</b> {target_name} ({target_id})\n<b>Admin:</b> {update.effective_user.mention_html()}\n<b>Reason:</b> {reason}"
         await send_log(context, chat_id, log_text)
+        
 
 async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context): return
@@ -186,6 +211,30 @@ async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     log_text = f"<b>🔓 USER UNBANNED</b>\n<b>User ID:</b> {user_id}\n<b>Admin:</b> {update.effective_user.mention_html()}"
     await send_log(context, chat_id, log_text)
+    
+async def whyban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /whyban <user_id>")
+        return
+
+    user_id = int(context.args[0])
+    chat_id = update.effective_chat.id
+    db = get_db()
+
+    res = db.execute("SELECT reason FROM bans WHERE chat_id=? AND user_id=?", (chat_id, user_id)).fetchone()
+    
+    if res:
+        await update.message.reply_text(f"<b>Ban Reason for {user_id}:</b> {res[0]}", parse_mode="HTML")
+    else:
+        fed = db.execute("SELECT fed_id FROM fed_groups WHERE chat_id=?", (chat_id,)).fetchone()
+        if fed:
+            fres = db.execute("SELECT reason FROM fed_bans WHERE fed_id=? AND user_id=?", (fed[0], user_id)).fetchone()
+            if fres:
+                await update.message.reply_text(f"<b>Fed Ban Reason for {user_id}:</b> {fres[0]}", parse_mode="HTML")
+                return
+
+        await update.message.reply_text("No ban record found for this user.")
+
 
 # --- FEDERATION COMMANDS ---
 async def new_fed(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -210,8 +259,7 @@ async def fban_user(update: Update, context: ContextTypes.DEFAULT_TYPE, ban=True
     if not context.args: return
     user_id = int(context.args[0])
     chat_id = update.effective_chat.id
-    db = get_db()
-    fed = db.execute("SELECT fed_id FROM fed_groups WHERE chat_id=?", (chat_id,)).fetchone()
+    db = get_db()fed = db.execute("SELECT fed_id FROM fed_groups WHERE chat_id=?", (chat_id,)).fetchone()
     if not fed:
         await update.message.reply_text("Group not linked to any Federation.")
         return
@@ -259,9 +307,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     # Delete Deleted Accounts
-    if user and user.is_deleted:
+    if user and not user.first_name:
         await context.bot.ban_chat_member(chat_id, user.id)
         return
+        
 
     # Filters
     if msg.text:
@@ -297,10 +346,11 @@ def main():
     app.add_handler(CommandHandler("save", save_note))
     app.add_handler(CommandHandler("get", get_note))
     app.add_handler(CommandHandler("filter", set_filter))
-    app.add_handler(CommandHandler("warn", warn_user))
+    app.add_handler(CommandHandler(["warn", "dwarn"], warn_user))
     app.add_handler(CommandHandler("mute", mute_user))
     app.add_handler(CommandHandler("tmute", tmute_user))
-    app.add_handler(CommandHandler("ban", ban_user))
+    app.add_handler(CommandHandler(["ban", "dban"], ban_user))
+    app.add_handler(CommandHandler("whyban", whyban_user))
     app.add_handler(CommandHandler("unban", unban_user))
     app.add_handler(CommandHandler("newfed", new_fed))
     app.add_handler(CommandHandler("joinfed", join_fed))
@@ -313,4 +363,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
     
