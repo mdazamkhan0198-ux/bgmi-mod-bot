@@ -9,8 +9,7 @@ from telegram.ext import (
     CommandHandler,
     MessageHandler,
     filters,
-    ContextTypes,
-    ChatMemberHandler
+    ContextTypes
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -137,7 +136,6 @@ async def warn_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         db.commit()
         await send_log(context, chat_id, log_text)
-        
 
 async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context): return
@@ -167,8 +165,8 @@ async def tmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     log_text = f"<b>⏳ TEMP MUTE</b>\n<b>User ID:</b> {target_id}\n<b>Duration:</b> {duration_str}\n<b>Admin:</b> {update.effective_user.mention_html()}"
     await send_log(context, chat_id, log_text)
-    
-    async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context): return
     msg = update.message
     chat_id = update.effective_chat.id
@@ -200,7 +198,6 @@ async def tmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text(f"Banned {target_name}. Reason: {reason}", parse_mode="HTML")
         log_text = f"<b>🔨 BAN</b>\n<b>User:</b> {target_name} ({target_id})\n<b>Admin:</b> {update.effective_user.mention_html()}\n<b>Reason:</b> {reason}"
         await send_log(context, chat_id, log_text)
-        
 
 async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context): return
@@ -211,7 +208,7 @@ async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     log_text = f"<b>🔓 USER UNBANNED</b>\n<b>User ID:</b> {user_id}\n<b>Admin:</b> {update.effective_user.mention_html()}"
     await send_log(context, chat_id, log_text)
-    
+
 async def whyban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Usage: /whyban <user_id>")
@@ -234,7 +231,6 @@ async def whyban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
         await update.message.reply_text("No ban record found for this user.")
-
 
 # --- FEDERATION COMMANDS ---
 async def new_fed(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -259,7 +255,8 @@ async def fban_user(update: Update, context: ContextTypes.DEFAULT_TYPE, ban=True
     if not context.args: return
     user_id = int(context.args[0])
     chat_id = update.effective_chat.id
-    db = get_db()fed = db.execute("SELECT fed_id FROM fed_groups WHERE chat_id=?", (chat_id,)).fetchone()
+    db = get_db()
+    fed = db.execute("SELECT fed_id FROM fed_groups WHERE chat_id=?", (chat_id,)).fetchone()
     if not fed:
         await update.message.reply_text("Group not linked to any Federation.")
         return
@@ -310,7 +307,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user and not user.first_name:
         await context.bot.ban_chat_member(chat_id, user.id)
         return
-        
 
     # Filters
     if msg.text:
@@ -350,8 +346,8 @@ def main():
     app.add_handler(CommandHandler("mute", mute_user))
     app.add_handler(CommandHandler("tmute", tmute_user))
     app.add_handler(CommandHandler(["ban", "dban"], ban_user))
-    app.add_handler(CommandHandler("whyban", whyban_user))
     app.add_handler(CommandHandler("unban", unban_user))
+    app.add_handler(CommandHandler("whyban", whyban_user))
     app.add_handler(CommandHandler("newfed", new_fed))
     app.add_handler(CommandHandler("joinfed", join_fed))
     app.add_handler(CommandHandler("fban", fban_user))
@@ -363,6 +359,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
     
