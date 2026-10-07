@@ -201,8 +201,8 @@ async def tmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     log_text = f"<b>⏳ TEMP MUTE</b>\n<b>User ID:</b> {target_id}\n<b>Duration:</b> {duration_str}\n<b>Admin:</b> {update.effective_user.mention_html()}"
     await send_log(context, chat_id, log_text)
-    
-    async def unmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def unmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context): return
     msg = update.message
     chat_id = update.effective_chat.id
