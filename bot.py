@@ -246,7 +246,7 @@ async def fban_user(update: Update, context: ContextTypes.DEFAULT_TYPE, ban=True
         return
     fed_id = fed[0]
     if ban:
-                db.execute("INSERT OR REPLACE INTO fed_bans VALUES (?, ?, ?, ?)", (fed_id, user_id, reason, update.effective_user.id))
+        db.execute("INSERT OR REPLACE INTO fed_bans VALUES (?, ?, ?, ?)", (fed_id, user_id, "Fed Banned", update.effective_user.id))
         db.commit()
         await send_log(context, chat_id, f"<b>🔒 FED BAN</b>\n<b>User ID:</b> {user_id}\n<b>Admin:</b> {update.effective_user.mention_html()}")
         await update.message.reply_text("User fed banned.")
