@@ -136,7 +136,8 @@ async def warn_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         db.commit()
         await send_log(context, chat_id, log_text)
-        async def unwarn_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        
+async def unwarn_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context): return
     msg = update.message
     chat_id = update.effective_chat.id
