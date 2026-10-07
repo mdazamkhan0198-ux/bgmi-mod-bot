@@ -136,6 +136,41 @@ async def warn_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         db.commit()
         await send_log(context, chat_id, log_text)
+        async def unwarn_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin(update, context): return
+    msg = update.message
+    chat_id = update.effective_chat.id
+    target_id, target_name = None, None
+
+    if msg.reply_to_message:
+        target = msg.reply_to_message.from_user
+        target_id, target_name = target.id, target.mention_html()
+    elif context.args and context.args[0].isdigit():
+        target_id = int(context.args[0])
+        target_name = f"<a href='tg://user?id={target_id}'>{target_id}</a>"
+    else:
+        await msg.reply_text("Please reply to a user or pass their numerical User ID.")
+        return
+
+    db = get_db()
+    res = db.execute("SELECT count FROM warns WHERE chat_id=? AND user_id=?", (chat_id, target_id)).fetchone()
+    
+    if not res or res[0] <= 0:
+        await msg.reply_text("This user has no active warnings.")
+        return
+
+    new_count = res[0] - 1
+    if new_count == 0:
+        db.execute("DELETE FROM warns WHERE chat_id=? AND user_id=?", (chat_id, target_id))
+    else:
+        db.execute("UPDATE warns SET count=? WHERE chat_id=? AND user_id=?", (new_count, chat_id, target_id))
+    
+    db.commit()
+    await msg.reply_text(f"Removed 1 warning from {target_name}. Current warnings: ({new_count}/3).", parse_mode="HTML")
+
+    log_text = f"<b>⚠️ UNWARN ({new_count}/3)</b>\n<b>User:</b> {target_name}\n<b>Admin:</b> {update.effective_user.mention_html()}"
+    await send_log(context, chat_id, log_text)
+    
 
 async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context): return
@@ -165,6 +200,39 @@ async def tmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     log_text = f"<b>⏳ TEMP MUTE</b>\n<b>User ID:</b> {target_id}\n<b>Duration:</b> {duration_str}\n<b>Admin:</b> {update.effective_user.mention_html()}"
     await send_log(context, chat_id, log_text)
+    
+    async def unmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin(update, context): return
+    msg = update.message
+    chat_id = update.effective_chat.id
+    target_id, target_name = None, None
+
+    if msg.reply_to_message:
+        target = msg.reply_to_message.from_user
+        target_id, target_name = target.id, target.mention_html()
+    elif context.args and context.args[0].isdigit():
+        target_id = int(context.args[0])
+        target_name = f"<a href='tg://user?id={target_id}'>{target_id}</a>"
+    else:
+        await msg.reply_text("Please reply to a user or pass their numerical User ID.")
+        return
+
+    # Restore all standard chat permissions
+    await context.bot.restrict_chat_member(
+        chat_id, 
+        target_id, 
+        permissions=ChatPermissions(
+            can_send_messages=True,
+            can_send_media_messages=True,
+            can_send_other_messages=True,
+            can_add_web_page_previews=True
+        )
+    )
+    await msg.reply_text(f"Unmuted {target_name}.", parse_mode="HTML")
+
+    log_text = f"<b>🔊 UNMUTE</b>\n<b>User:</b> {target_name}\n<b>Admin:</b> {update.effective_user.mention_html()}"
+    await send_log(context, chat_id, log_text)
+    
 
 async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context): return
@@ -343,8 +411,10 @@ def main():
     app.add_handler(CommandHandler("get", get_note))
     app.add_handler(CommandHandler("filter", set_filter))
     app.add_handler(CommandHandler(["warn", "dwarn"], warn_user))
+    app.add_handler(CommandHandler(["unwarn", "rmwarn"], unwarn_user))
     app.add_handler(CommandHandler("mute", mute_user))
     app.add_handler(CommandHandler("tmute", tmute_user))
+    app.add_handler(CommandHandler("unmute", unmute_user))
     app.add_handler(CommandHandler(["ban", "dban"], ban_user))
     app.add_handler(CommandHandler("unban", unban_user))
     app.add_handler(CommandHandler("whyban", whyban_user))
