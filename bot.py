@@ -246,4 +246,120 @@ async def fban_user(update: Update, context: ContextTypes.DEFAULT_TYPE, ban=True
         return
     fed_id = fed[0]
     if ban:
-        db.execute("INSERT OR REPLACE 
+                db.execute("INSERT OR REPLACE INTO fed_bans VALUES (?, ?, ?, ?)", (fed_id, user_id, reason, update.effective_user.id))
+        db.commit()
+        await send_log(context, chat_id, f"<b>🔒 FED BAN</b>\n<b>User ID:</b> {user_id}\n<b>Admin:</b> {update.effective_user.mention_html()}")
+        await update.message.reply_text("User fed banned.")
+
+   else:
+        db.execute("DELETE FROM fed_bans WHERE fed_id=? AND user_id=?", (fed_id, user_id))
+        await update.message.reply_text(f"User {user_id} un-FBanned.")
+        log_text = f"<b>🌐 FEDERATION UNBAN</b>\n<b>User ID:</b> {user_id}\n<b>Admin:</b> {update.effective_user.mention_html()}"
+    db.commit()
+    await send_log(context, chat_id, log_text)
+
+# --- TRACK JOIN / LEFT EVENTS ---
+
+async def track_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Logs when users join or leave the chat."""
+    result = update.chat_member
+    chat_id = update.effective_chat.id
+    user = result.new_chat_member.user
+    
+    old_status = result.old_chat_member.status
+    new_status = result.new_chat_member.status
+    
+    if old_status in ["left", "kicked"] and new_status in ["member", "administrator"]:
+        log_text = f"<b>📥 MEMBER JOINED</b>\n<b>User:</b> {user.mention_html()} ({user.id})"
+        await send_log(context, chat_id, log_text)
+    elif old_status in ["member", "administrator"] and new_status in ["left", "kicked"]:
+        log_text = f"<b>📤 MEMBER LEFT / REMOVED</b>\n<b>User:</b> {user.mention_html()} ({user.id})"
+        await send_log(context, chat_id, log_text)
+
+# --- AUTOMATIC ENFORCEMENT & FILTERS ---
+
+async def auto_moderation_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.effective_chat: return
+    chat_id = update.effective_chat.id
+    msg = update.message
+
+    # 1. Automatic Deleted Accounts Cleanup
+    if msg.new_chat_members:
+        for member in msg.new_chat_members:
+            if member.is_deleted or member.first_name == "Deleted Account":
+                await context.bot.ban_chat_member(chat_id, member.id)
+                await msg.delete()
+                log_text = f"<b>🤖 AUTO-BAN</b>\nDeleted Account removed: ID {member.id}"
+                await send_log(context, chat_id, log_text)
+                return
+
+    # 2. Automatic Link Remover
+    if msg.text or msg.caption:
+        text = msg.text or msg.caption
+        if re.search(r'(https?://[^\s]+|t\.me/[^\s]+|telegram\.me/[^\s]+)', text):
+            if not await is_admin(update, context):
+                await msg.delete()
+                log_text = f"<b>🔗 LINK DELETED</b>\n<b>Sender:</b> {msg.from_user.mention_html()} ({msg.from_user.id})"
+                await send_log(context, chat_id, log_text)
+                return
+
+    # 3. Keyword Auto-Filter
+    if msg.text:
+        db = get_db()
+        res = db.execute("SELECT reply FROM filters WHERE chat_id=? AND keyword=?", (chat_id, msg.text.lower())).fetchone()
+        if res:
+            await msg.reply_text(res[0])
+
+    # 4. Automatic 18+ NSFW Nude Content Detection
+    if msg.photo:
+        if SIGHTENGINE_USER != "YOUR_SIGHTENGINE_USER":
+            photo_file = await msg.photo[-1].get_file()
+            photo_url = photo_file.file_path
+            
+            params = {
+                'url': photo_url,
+                'models': 'nudity-2.0',
+                'api_user': SIGHTENGINE_USER,
+                'api_secret': SIGHTENGINE_SECRET
+            }
+            req = requests.get('https://api.sightengine.com/1.0/check.json', params=params)
+            res = req.json()
+            if res.get('status') == 'success':
+                nudity = res.get('nudity', {})
+                if nudity.get('sexual_activity', 0) > 0.5 or nudity.get('sexual_display', 0) > 0.5 or nudity.get('erotica', 0) > 0.6:
+                    await msg.delete()
+                    log_text = f"<b>🔞 NSFW CONTENT DELETED</b>\n<b>Sender:</b> {msg.from_user.mention_html()} ({msg.from_user.id})"
+                    await send_log(context, chat_id, log_text)
+
+# --- MAIN RUNNER ---
+if __name__ == "__main__":
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    # Commands
+    app.add_handler(CommandHandler("setlog", set_log_channel))
+    app.add_handler(CommandHandler("save", save_note))
+    app.add_handler(CommandHandler("get", get_note))
+    app.add_handler(CommandHandler("filter", set_filter))
+    app.add_handler(CommandHandler("warn", warn_user))
+    app.add_handler(CommandHandler("warns", check_warns))
+    app.add_handler(CommandHandler("resetwarn", reset_warns))
+    app.add_handler(CommandHandler("mute", mute_user))
+    app.add_handler(CommandHandler("dmute", mute_user))
+    app.add_handler(CommandHandler("tmute", tmute_user))
+    app.add_handler(CommandHandler("ban", lambda u, c: ban_user(u, c, silent=False)))
+    app.add_handler(CommandHandler("sban", lambda u, c: ban_user(u, c, silent=True)))
+    app.add_handler(CommandHandler("unban", unban_user))
+    app.add_handler(CommandHandler("newfed", new_fed))
+    app.add_handler(CommandHandler("joinfed", join_fed))
+    app.add_handler(CommandHandler("fban", lambda u, c: fban_user(u, c, ban=True)))
+    app.add_handler(CommandHandler("funban", lambda u, c: fban_user(u, c, ban=False)))
+
+    # Member Join/Leave Tracker
+    app.add_handler(ChatMemberHandler(track_chat_members, ChatMemberHandler.CHAT_MEMBER))
+
+    # Real-Time Monitoring & Auto Moderation Filter
+    app.add_handler(MessageHandler(filters.ALL, auto_moderation_handler))
+
+    print("Bot starting...")
+    app.run_polling()
+z
